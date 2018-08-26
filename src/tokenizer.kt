@@ -1,4 +1,5 @@
 
+import Token.*
 
 sealed class Token {
     data class Identifier(val value: String) : Token()
@@ -6,8 +7,8 @@ sealed class Token {
     data class NumberLiteral(val value: Int) : Token()
     data class Keyword(val value: String) : Token()
     data class Operator(val value: String) : Token()
+    data class Illegal(val value: String) : Token()
     object EndOfLine : Token()
-    object Illegal : Token()
 }
 
 val keywords = setOf(
@@ -31,7 +32,7 @@ val operators = setOf(
         ")"
 )
 
-fun tokenize_line(line: String) : List<Token> {
+fun tokenizeLine(line: String) : List<Token> {
     val tokenizer = Tokenizer(line)
     val tokens = mutableListOf<Token>()
 
@@ -40,8 +41,8 @@ fun tokenize_line(line: String) : List<Token> {
 
         tokens.add(tok)
         when(tok) {
-            Token.EndOfLine,
-            Token.Illegal -> break@loop
+            EndOfLine,
+            is Illegal -> break@loop
         }
     }
 
@@ -64,8 +65,8 @@ class Tokenizer(private val input: String, var index: Int = 0) {
             char?.isLetter() ?: false -> readIdentifier()
             char?.isDigit() ?: false -> readNumber()
             char?.let { operators.contains("$char") } ?: false -> readOperator()
-            char == null -> Token.EndOfLine
-            else -> Token.Illegal
+            char == null -> EndOfLine
+            else -> Illegal(char.toString())
         }
     }
 
@@ -84,7 +85,7 @@ class Tokenizer(private val input: String, var index: Int = 0) {
             index++
         }
 
-        return Token.NumberLiteral(number.toInt())
+        return NumberLiteral(number.toInt())
     }
 
     private fun readOperator(): Token.Operator {
@@ -95,7 +96,7 @@ class Tokenizer(private val input: String, var index: Int = 0) {
             index++
         }
 
-        return Token.Operator(operator)
+        return Operator(operator)
     }
 
     private fun readIdentifier(): Token {
@@ -108,19 +109,19 @@ class Tokenizer(private val input: String, var index: Int = 0) {
         }
 
         return when {
-            keywords.contains(identifier) -> Token.Keyword(identifier)
-            operators.contains(identifier) -> Token.Operator(identifier)
-            else -> Token.Identifier(identifier)
+            keywords.contains(identifier) -> Keyword(identifier)
+            operators.contains(identifier) -> Operator(identifier)
+            else -> Identifier(identifier)
         }
     }
 
-    private fun readLiteral(): Token.StringLiteral {
+    private fun readLiteral(): StringLiteral {
         var lit = ""
         while (index < input.length && input[index] != '"'  ) {
             lit += input[index]
             index++
         }
         index++
-        return Token.StringLiteral(lit)
+        return StringLiteral(lit)
     }
 }

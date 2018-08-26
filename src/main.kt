@@ -8,7 +8,7 @@ fun main(args: Array<String>) {
     while (true) {
         print(">>> ")
         readLine()?.let { input ->
-            val tokens = tokenize_line(input)
+            val tokens = tokenizeLine(input)
             println(tokens)
             val parseResult = parseToCommand(tokens)
             println(parseResult)
