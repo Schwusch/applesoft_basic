@@ -5,16 +5,16 @@ sealed class Result<out V : Any> {
 }
 
 fun main(args: Array<String>) {
+    val interpreter = Interpreter()
+
     while (true) {
-        print(">>> ")
+        print("]")
         readLine()?.let { input ->
             val tokens = tokenizeLine(input)
-            println(tokens)
             val parseResult = parseToCommand(tokens)
-            println(parseResult)
             when(parseResult) {
                 is Result.Err -> println(parseResult.error)
-                is Result.Ok -> interpretCommand(parseResult.value)
+                is Result.Ok -> interpreter.interpretCommand(parseResult.value)
             }
         }
     }

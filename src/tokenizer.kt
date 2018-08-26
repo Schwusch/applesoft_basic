@@ -13,7 +13,11 @@ sealed class Token {
 
 val keywords = setOf(
         "PRINT",
-        "?"
+        "?",
+        "REM",
+        "IF",
+        "THEN",
+        "LET"
 )
 
 val operators = setOf(
@@ -29,7 +33,8 @@ val operators = setOf(
         "<>",
         "MOD",
         "(",
-        ")"
+        ")",
+        "="
 )
 
 fun tokenizeLine(line: String) : List<Token> {
@@ -64,7 +69,11 @@ class Tokenizer(private val input: String, var index: Int = 0) {
             }
             char?.isLetter() ?: false -> readIdentifier()
             char?.isDigit() ?: false -> readNumber()
-            char?.let { operators.contains("$char") } ?: false -> readOperator()
+            char != null && operators.contains(char.toString()) -> readOperator()
+            char != null && keywords.contains(char.toString()) -> {
+                index++
+                Keyword(char.toString())
+            }
             char == null -> EndOfLine
             else -> Illegal(char.toString())
         }
@@ -91,7 +100,11 @@ class Tokenizer(private val input: String, var index: Int = 0) {
     private fun readOperator(): Token.Operator {
         var operator = "${input[index]}"
         index++
-        while (index < input.length && operators.contains("${input[index]}")) {
+        while (
+                index < input.length
+                && operators.contains("${input[index]}")
+                && Operator(operator + input[index]).getBinop() !is Result.Err
+        ) {
             operator += input[index]
             index++
         }
