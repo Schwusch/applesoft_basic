@@ -1,9 +1,11 @@
-import ExprResult.*
-import Result.Err
-import Result.Ok
-import BinaryOp.*
-import Expression.*
-import Command.*
+package main
+
+import main.ExprResult.*
+import main.Result.Err
+import main.Result.Ok
+import main.BinaryOp.*
+import main.Expression.*
+import main.Command.*
 
 sealed class ExprResult{
     data class ResStr(val value: String): ExprResult()
@@ -70,7 +72,8 @@ class Interpreter {
             Command.ExpREM -> true
             is Command.Multiple -> {
                 line.command.commands.forEach {
-                    interpretCommand(CommandResult(original = line.original, command = Ok(it)))
+                    interpretCommand(CommandResult(original = it.original, command = it.command))
+                    Unit
                 }
                 true
             }

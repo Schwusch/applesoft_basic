@@ -1,11 +1,13 @@
+package main
+
 import java.util.*
-import Result.Err
-import Result.Ok
-import BinaryOp.*
-import UnaryOp.*
-import Token.*
-import Expression.*
-import Command.*
+import main.Result.Err
+import main.Result.Ok
+import main.BinaryOp.*
+import main.UnaryOp.*
+import main.Token.*
+import main.Expression.*
+import main.Command.*
 
 sealed class UnaryOp {
     object UMinus : UnaryOp()
@@ -94,7 +96,7 @@ sealed class Command {
     data class GoTo(val line: Int): Command()
     data class GoSub(val line: Int): Command()
     data class If(val eval: Expression, val then: CommandResult) : Command()
-    data class Multiple(val commands: List<Command>): Command()
+    data class Multiple(val commands: List<CommandResult>): Command()
     object Return: Command()
     object Pop: Command()
     object ExpREM: Command()
@@ -105,57 +107,71 @@ data class CommandResult(val original: String, val command: Result<Command>)
 
 fun parseToCommand(tokenRes: TokenResult): CommandResult {
     val tokens = tokenRes.tokens
-    val result: Result<Command> =  if (tokens.isNotEmpty()) {
-        val head = tokens.first()
-        when(head) {
-            is Keyword -> when(head.value) {
-                "PRINT", "?" -> parseToPrintCommand(tokens.drop(1))
-                "REM" -> Ok(ExpREM)
-                "LET" -> parseToAssignment(tokens.drop(1))
-                "RUN" -> {
-                    val line = tokens.getOrNull(1)?.let {
-                        (it as? NumberLiteral)?.value ?: 0
-                    } ?: 0
-                    Ok(Run(line))
-                }
-                "LIST" ->  Ok(ListCommand)
-                "GOTO" -> {
-                    val line = tokens.getOrNull(1)?.let {
-                        (it as? NumberLiteral)?.value ?: 0
-                    } ?: 0
-                    Ok(GoTo(line))
-                }
-                /*
-                ]10 ? hej
-                ]20 hej = hej + 1
-                ]30 IF hej < 100 THEN GOTO 10
-                */
-                "IF" -> {
-                    val thenIndex = tokens.indexOfFirst { it is Keyword && it.value == "THEN" }
-                    val ifExpRes = parseShuntingYard(tokens.subList(1, thenIndex))
-                    val thenExpRes = parseToCommand(TokenResult(original = tokenRes.original, tokens = tokens.drop(thenIndex + 1)))
-                    if (ifExpRes !is Ok || thenExpRes.command !is Ok)
-                        return CommandResult(
-                                original = tokenRes.original,
-                                command = Err("*** No valid expression ***\n" + "\t original: ${tokenRes.original}")
-                        )
-                    Ok(If(eval = ifExpRes.value, then = thenExpRes))
-                }
-                else -> Err("*** Unsupported command: $head")
-            }
-            is NumberLiteral -> {
-                val command = parseToCommand(TokenResult(original = tokenRes.original, tokens = tokens.drop(1)))
-                when(command.command) {
-                    is Ok -> Ok(StoreCommand(head.value, command = command.command.value))
-                    else -> command.command
-                }
-            }
-            is Identifier -> parseToAssignment(tokens)
-            else -> Err("*** Not a keyword: $head")
-        }
+    val semi = tokens.indexOfFirst { it is Operator && it.value == ":" }
 
-    } else {
-        Err("*** No valid tokens ***\n\t original: ${tokenRes.original}")
+    val result: Result<Command> = when {
+        semi > -1 -> {
+            val head = tokens.subList(0, semi)
+            val tail = tokens.drop(semi + 1)
+            Ok(Multiple(
+                    listOf(
+                            parseToCommand(TokenResult(
+                                    original = tokenRes.original,
+                                    tokens = head
+                            )),
+                            parseToCommand(TokenResult(
+                                    original = tokenRes.original,
+                                    tokens = tail
+                            ))
+                    )
+            ))
+        }
+        tokens.isNotEmpty() -> {
+            val head = tokens.first()
+            when(head) {
+                is Keyword -> when(head.value) {
+                    "PRINT", "?" -> parseToPrintCommand(tokens.drop(1))
+                    "REM" -> Ok(ExpREM)
+                    "LET" -> parseToAssignment(tokens.drop(1))
+                    "RUN" -> {
+                        val line = tokens.getOrNull(1)?.let {
+                            (it as? NumberLiteral)?.value ?: 0
+                        } ?: 0
+                        Ok(Run(line))
+                    }
+                    "LIST" ->  Ok(ListCommand)
+                    "GOTO" -> {
+                        val line = tokens.getOrNull(1)?.let {
+                            (it as? NumberLiteral)?.value ?: 0
+                        } ?: 0
+                        Ok(GoTo(line))
+                    }
+                    "IF" -> {
+                        val thenIndex = tokens.indexOfFirst { it is Keyword && it.value == "THEN" }
+                        val ifExpRes = parseShuntingYard(tokens.subList(1, thenIndex))
+                        val thenExpRes = parseToCommand(TokenResult(original = tokenRes.original, tokens = tokens.drop(thenIndex + 1)))
+                        if (ifExpRes !is Ok || thenExpRes.command !is Ok)
+                            return CommandResult(
+                                    original = tokenRes.original,
+                                    command = Err("*** No valid expression ***\n" + "\t original: ${tokenRes.original}")
+                            )
+                        Ok(If(eval = ifExpRes.value, then = thenExpRes))
+                    }
+                    else -> Err("*** Unsupported command: $head")
+                }
+                is NumberLiteral -> {
+                    val command = parseToCommand(TokenResult(original = tokenRes.original, tokens = tokens.drop(1)))
+                    when(command.command) {
+                        is Ok -> Ok(StoreCommand(head.value, command = command.command.value))
+                        else -> command.command
+                    }
+                }
+                is Identifier -> parseToAssignment(tokens)
+                else -> Err("*** Not a keyword: $head")
+            }
+
+        }
+        else -> Err("*** No valid tokens ***\n\t original: ${tokenRes.original}")
     }
 
     return CommandResult(original = tokenRes.original, command = result)
@@ -230,6 +246,7 @@ fun parseShuntingYard(tokens: List<Token>): Result<Expression> {
                             is Ok -> opStackResult.value
                             is Err -> return Err("*** Something went wrong 2:\n\t${opStackResult.error}")
                         }
+
                         if (tokBinop.priorityBinop() <= opStackBinop.priorityBinop()) {
                             output.push(operators.pop())
                         } else break
@@ -242,7 +259,7 @@ fun parseShuntingYard(tokens: List<Token>): Result<Expression> {
             else -> return Err("*** Shunting yard can not handle: $token")
         }
     }
-    operators.forEach { output.push(it) }
+    while (operators.isNotEmpty()) output.push(operators.pop())
 
     return parseReversePolishNotation(output)
 }

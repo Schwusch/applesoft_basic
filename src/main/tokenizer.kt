@@ -1,5 +1,5 @@
-
-import Token.*
+package main
+import main.Token.*
 
 sealed class Token {
     data class Identifier(val value: String) : Token()
@@ -41,7 +41,9 @@ val operators = setOf(
         "MOD",
         "(",
         ")",
-        "="
+        "=",
+        ":",
+        ";"
 )
 
 data class TokenResult(val original: String, val tokens: List<Token>)
