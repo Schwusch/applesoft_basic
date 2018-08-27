@@ -10,12 +10,11 @@ fun main(args: Array<String>) {
     while (true) {
         print("]")
         readLine()?.let { input ->
-            val tokens = tokenizeLine(input)
-            val parseResult = parseToCommand(tokens)
-            when(parseResult) {
-                is Result.Err -> println(parseResult.error)
-                is Result.Ok -> interpreter.interpretCommand(parseResult.value)
-            }
+            interpreter.interpretCommand(
+                    parseToCommand(
+                            tokenizeLine(input)
+                    )
+            )
         }
     }
 }

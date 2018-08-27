@@ -17,7 +17,14 @@ val keywords = setOf(
         "REM",
         "IF",
         "THEN",
-        "LET"
+        "LET",
+        "LIST",
+        "RUN",
+        "LIST",
+        "GOTO",
+        "GOSUB",
+        "RETURN",
+        "POP"
 )
 
 val operators = setOf(
@@ -37,7 +44,9 @@ val operators = setOf(
         "="
 )
 
-fun tokenizeLine(line: String) : List<Token> {
+data class TokenResult(val original: String, val tokens: List<Token>)
+
+fun tokenizeLine(line: String) : TokenResult {
     val tokenizer = Tokenizer(line)
     val tokens = mutableListOf<Token>()
 
@@ -51,7 +60,7 @@ fun tokenizeLine(line: String) : List<Token> {
         }
     }
 
-    return tokens
+    return TokenResult(line, tokens)
 }
 
 
