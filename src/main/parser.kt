@@ -218,8 +218,8 @@ fun parseToExpression(tokens: List<Token>): Result<Expression> {
 }
 
 fun parseShuntingYard(tokens: List<Token>): Result<Expression> {
-    val output = Stack<Token>()
-    val operators = Stack<Token.Operator>()
+    val output = mutableListOf<Token>()
+    val operators = mutableListOf<Operator>()
 
     for (token in tokens) {
         when(token) {
@@ -262,9 +262,9 @@ fun parseShuntingYard(tokens: List<Token>): Result<Expression> {
     return parseReversePolishNotation(output)
 }
 
-fun parseReversePolishNotation(tokens: Stack<Token>): Result<Expression> {
-    val expressionStack = Stack<Expression>()
-    val operatorStack = Stack<Token.Operator>()
+fun parseReversePolishNotation(tokens: MutableList<Token>): Result<Expression> {
+    val expressionStack = mutableListOf<Expression>()
+    val operatorStack = mutableListOf<Operator>()
 
     var pendingOperand = false
     while (tokens.isNotEmpty()) {
@@ -305,18 +305,12 @@ fun parseReversePolishNotation(tokens: Stack<Token>): Result<Expression> {
 
 fun String.isParanthesis(): Boolean = this == "(" || this == ")"
 
-class Stack<T>{
-    private val elements: MutableList<T> = mutableListOf()
-    fun isNotEmpty() = elements.isNotEmpty()
-    fun push(item: T) = elements.add(item)
-    fun pop() : T? {
-        val item = elements.lastOrNull()
-        if (isNotEmpty()){
-            elements.removeAt(elements.size -1)
-        }
-        return item
+fun <T>MutableList<T>.push(item: T) = add(item)
+fun <T>MutableList<T>.peek(): T? = lastOrNull()
+fun <T>MutableList<T>.pop(): T? {
+    val item = lastOrNull()
+    if (isNotEmpty()){
+        removeAt(size -1)
     }
-    fun peek() : T? = elements.lastOrNull()
-
-    override fun toString(): String = elements.toString()
+    return item
 }
