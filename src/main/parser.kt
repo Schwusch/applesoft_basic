@@ -1,6 +1,4 @@
 package main
-
-import java.util.*
 import main.Result.Err
 import main.Result.Ok
 import main.BinaryOp.*
@@ -231,8 +229,8 @@ fun parseShuntingYard(tokens: List<Token>): Result<Expression> {
             is Operator -> {
                 if(token.value == "(") operators.push(token)
                 else if (token.value == ")") {
-                    while (operators.peek().value != "(") output.push(operators.pop())
-                    if (operators.peek().value == "(") operators.pop()
+                    while (operators.peek()?.value != "(") operators.pop()?.let { output.push(it) } ?: return Err("*** No matching '(' ***")
+                    if (operators.peek()?.value == "(") operators.pop()
                 } else {
                     val tokOpRes = token.getBinop()
                     val tokBinop = when(tokOpRes) {
@@ -240,15 +238,15 @@ fun parseShuntingYard(tokens: List<Token>): Result<Expression> {
                         is Err -> return Err("*** Something went wrong 1:\n\t${tokOpRes.error}")
                     }
 
-                    while (operators.isNotEmpty() && operators.peek().value.isParanthesis().not()) {
-                        val opStackResult = operators.peek().getBinop()
+                    while (operators.isNotEmpty() && operators.peek()?.value?.isParanthesis()?.not() == true) {
+                        val opStackResult = operators.peek()?.getBinop() ?: return Err("*** No operators on shunting yard stack ***")
                         val opStackBinop = when(opStackResult) {
                             is Ok -> opStackResult.value
                             is Err -> return Err("*** Something went wrong 2:\n\t${opStackResult.error}")
                         }
 
                         if (tokBinop.priorityBinop() <= opStackBinop.priorityBinop()) {
-                            output.push(operators.pop())
+                            operators.pop()?.let { output.push(it) }
                         } else break
                     }
 
@@ -259,7 +257,7 @@ fun parseShuntingYard(tokens: List<Token>): Result<Expression> {
             else -> return Err("*** Shunting yard can not handle: $token")
         }
     }
-    while (operators.isNotEmpty()) output.push(operators.pop())
+    while (operators.isNotEmpty()) operators.pop()?.let { output.push(it) }
 
     return parseReversePolishNotation(output)
 }
@@ -287,8 +285,8 @@ fun parseReversePolishNotation(tokens: Stack<Token>): Result<Expression> {
                 }
                 if (pendingOperand) {
                     while (expressionStack.isNotEmpty()) {
-                        val operand = expressionStack.pop()
-                        val operatorResult = operatorStack.pop().getBinop()
+                        val operand = expressionStack.pop() ?: return Err("*** No expression ***")
+                        val operatorResult = operatorStack.pop()?.getBinop() ?: return Err("*** No operator ***")
                         val operator = when(operatorResult) {
                             is Ok -> operatorResult.value
                             is Err -> return Err("*** Something went wrong 3:\n\t${operatorResult.error}")
@@ -302,7 +300,23 @@ fun parseReversePolishNotation(tokens: Stack<Token>): Result<Expression> {
             }
         }
     }
-    return Ok(expressionStack.pop())
+    return expressionStack.pop()?.let{ Ok(it) } ?: return Err("*** No expression ***")
 }
 
 fun String.isParanthesis(): Boolean = this == "(" || this == ")"
+
+class Stack<T>{
+    private val elements: MutableList<T> = mutableListOf()
+    fun isNotEmpty() = elements.isNotEmpty()
+    fun push(item: T) = elements.add(item)
+    fun pop() : T? {
+        val item = elements.lastOrNull()
+        if (isNotEmpty()){
+            elements.removeAt(elements.size -1)
+        }
+        return item
+    }
+    fun peek() : T? = elements.lastOrNull()
+
+    override fun toString(): String = elements.toString()
+}
