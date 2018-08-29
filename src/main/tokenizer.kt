@@ -6,7 +6,7 @@ sealed class Token {
     data class StringLiteral(val value: String) : Token()
     data class NumberLiteral(val value: Int) : Token()
     data class Keyword(val value: String) : Token()
-    data class Operator(val value: String) : Token()
+    data class Operator(val value: String, val unary: Boolean = false) : Token()
     data class Illegal(val value: String) : Token()
     object EndOfLine : Token()
 }
@@ -24,7 +24,8 @@ val keywords = setOf(
         "GOTO",
         "GOSUB",
         "RETURN",
-        "POP"
+        "POP",
+        "ONERR"
 )
 
 val operators = setOf(
@@ -32,13 +33,14 @@ val operators = setOf(
         "-",
         "*",
         "/",
-        "!",
         "&",
+        "AND",
+        "OR",
         "|",
         "<",
         ">",
-        "<>",
         "MOD",
+        "NOT",
         "(",
         ")",
         "=",
@@ -127,7 +129,7 @@ class Tokenizer(private val input: String, var index: Int = 0) {
         var identifier = "${input[index]}"
         index++
 
-        while (index < input.length && (input[index].isLetter() || input[index].isDigit() || input[index] == '_')) {
+        while (index < input.length && (input[index].isLetter() || input[index].isDigit() || input[index] == '_' || input[index] == '$')) {
             identifier += input[index]
             index++
         }

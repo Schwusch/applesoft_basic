@@ -22,7 +22,7 @@ fun UnaryOp.priorityUop(): Int {
 fun Token.Operator.getUnop(): Result<UnaryOp> {
     return when(this.value) {
         "-" -> Ok(UMinus)
-        "!" -> Ok(Not)
+        "NOT" -> Ok(Not)
         else -> Err("*** '${this.value}' is not a valid unary operator ***")
     }
 }
@@ -36,12 +36,12 @@ fun Token.Operator.getBinop(): Result<BinaryOp> {
         "MOD" -> Mod
         "=" -> Equal
         "<" -> Less
-        "<=" -> LessEq
+        "<=", "=<" -> LessEq
         ">" -> Great
-        ">=" -> GreatEq
-        "<>" -> Diff
-        "&" -> And
-        "|" -> Or
+        ">=", "=>" -> GreatEq
+        "<>", "><" -> Diff
+        "&", "AND" -> And
+        "|", "OR" -> Or
         else -> null
     }
 
@@ -94,6 +94,7 @@ sealed class Command {
     data class GoTo(val line: Int): Command()
     data class GoSub(val line: Int): Command()
     data class If(val eval: Expression, val then: CommandResult) : Command()
+    data class OnErr(val command: Command) : Command()
     data class Multiple(val commands: List<CommandResult>): Command()
     object Return: Command()
     object Pop: Command()
@@ -155,6 +156,16 @@ fun parseToCommand(tokenRes: TokenResult): CommandResult {
                             )
                         Ok(If(eval = ifExpRes.value, then = thenExpRes))
                     }
+                    "ONERR" -> {
+                        val res = parseToCommand(TokenResult(original = tokenRes.original, tokens = tokens.drop(1)))
+                        return when(res.command) {
+                            is Ok -> CommandResult(
+                                    original = tokenRes.original,
+                                    command = Ok(OnErr(res.command.value))
+                            )
+                            is Err -> res
+                        }
+                    }
                     else -> Err("*** Unsupported command: $head")
                 }
                 is NumberLiteral -> {
@@ -180,7 +191,7 @@ fun parseToAssignment(tokens: List<Token>): Result<Assignment> {
         val head = tokens.first()
         if (head !is Identifier) return Err("*** $head is not a valid identifier ***")
         val hopefullyEqualSign = tokens[1]
-        if (hopefullyEqualSign !is Operator || hopefullyEqualSign.value != "=") return Err("*** no equal sign in assignment ***")
+        if (hopefullyEqualSign !is Operator || hopefullyEqualSign.value != "=") return Err("*** no equal sign in assignment to $head ***")
 
         val res = parseToExpression(tokens.drop(2))
         when(res) {
@@ -208,8 +219,7 @@ fun parseToExpression(tokens: List<Token>): Result<Expression> {
             is StringLiteral,
             is NumberLiteral,
             is Identifier,
-            is Operator-> parseShuntingYard(tokens)
-
+            is Operator -> parseShuntingYard(tokens)
             else -> Err("*** Unsupported expression: $first")
         }
     } else {
@@ -221,7 +231,7 @@ fun parseShuntingYard(tokens: List<Token>): Result<Expression> {
     val output = mutableListOf<Token>()
     val operators = mutableListOf<Operator>()
 
-    for (token in tokens) {
+    tokens.forEachIndexed { index, token ->
         when(token) {
             is Identifier,
             is StringLiteral,
@@ -232,25 +242,38 @@ fun parseShuntingYard(tokens: List<Token>): Result<Expression> {
                     while (operators.peek()?.value != "(") operators.pop()?.let { output.push(it) } ?: return Err("*** No matching '(' ***")
                     if (operators.peek()?.value == "(") operators.pop()
                 } else {
-                    val tokOpRes = token.getBinop()
-                    val tokBinop = when(tokOpRes) {
-                        is Ok -> tokOpRes.value
-                        is Err -> return Err("*** Something went wrong 1:\n\t${tokOpRes.error}")
-                    }
-
-                    while (operators.isNotEmpty() && operators.peek()?.value?.isParanthesis()?.not() == true) {
-                        val opStackResult = operators.peek()?.getBinop() ?: return Err("*** No operators on shunting yard stack ***")
-                        val opStackBinop = when(opStackResult) {
-                            is Ok -> opStackResult.value
-                            is Err -> return Err("*** Something went wrong 2:\n\t${opStackResult.error}")
+                    val tokenBefore = tokens.getOrNull(index - 1)
+                    if (index == 0 || (tokenBefore is Operator && tokenBefore.value != ")")) {
+                        val tokOpRes = token.getUnop()
+                        when (tokOpRes) {
+                            is Ok -> {
+                                operators.push(Operator(token.value, true))
+                                Unit
+                            }
+                            is Err -> return Err("*** Error in expression parsing ***\n\t${tokOpRes.error}")
+                        }
+                    } else {
+                        val tokOpRes = token.getBinop()
+                        val tokBinop = when (tokOpRes) {
+                            is Ok -> tokOpRes.value
+                            is Err -> return Err("*** Error in expression parsing ***\n\t${tokOpRes.error}")
                         }
 
-                        if (tokBinop.priorityBinop() <= opStackBinop.priorityBinop()) {
-                            operators.pop()?.let { output.push(it) }
-                        } else break
-                    }
+                        while (operators.isNotEmpty() && operators.peek()?.value?.isParanthesis()?.not() == true) {
+                            val opStackResult = operators.peek()?.getBinop()
+                                    ?: return Err("*** No operators on shunting yard stack ***")
+                            val opStackBinop = when (opStackResult) {
+                                is Ok -> opStackResult.value
+                                is Err -> return Err("*** Something went wrong 2:\n\t${opStackResult.error}")
+                            }
 
-                    operators.push(token)
+                            if (tokBinop.priorityBinop() <= opStackBinop.priorityBinop()) {
+                                operators.pop()?.let { output.push(it) }
+                            } else break
+                        }
+
+                        operators.push(token)
+                    }
                 }
             }
             is Token.EndOfLine -> {}
@@ -272,7 +295,7 @@ fun parseReversePolishNotation(tokens: MutableList<Token>): Result<Expression> {
         when(token) {
             is Operator -> {
                 operatorStack.push(token)
-                pendingOperand = false
+                pendingOperand = token.unary
             }
             is Identifier,
             is StringLiteral,
@@ -281,18 +304,27 @@ fun parseReversePolishNotation(tokens: MutableList<Token>): Result<Expression> {
                     is NumberLiteral -> ExpInt(token.value)
                     is StringLiteral -> ExpStr(token.value)
                     is Identifier -> ExpIdentifier(token.value)
-                    else -> return Err("*** Something went really wrong ***")
+                    else -> return Err("*** Compiler has failed us: $token ***")
                 }
                 if (pendingOperand) {
+                    while (operatorStack.isNotEmpty() && operatorStack.peek()?.unary == true) {
+                        val operatorResult = operatorStack.pop()!!.getUnop()
+                        val operator = when(operatorResult) {
+                            is Ok -> operatorResult.value
+                            is Err -> return Err("*** Something went wrong 3:\n\t${operatorResult.error}")
+                        }
+                        expression = ExpUnr(op = operator, expression = expression)
+                    }
                     while (expressionStack.isNotEmpty()) {
-                        val operand = expressionStack.pop() ?: return Err("*** No expression ***")
                         val operatorResult = operatorStack.pop()?.getBinop() ?: return Err("*** No operator ***")
+                        val rightOperand = expressionStack.pop() ?: return Err("*** No expression ***")
+
                         val operator = when(operatorResult) {
                             is Ok -> operatorResult.value
                             is Err -> return Err("*** Something went wrong 3:\n\t${operatorResult.error}")
                         }
 
-                        expression = ExpBin(left = expression, op = operator, right = operand)
+                        expression = ExpBin(left = expression, op = operator, right = rightOperand)
                     }
                 }
                 expressionStack.push(expression)

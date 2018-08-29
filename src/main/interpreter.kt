@@ -19,110 +19,136 @@ class Interpreter {
     private val variables = mutableMapOf<String, ExprResult>()
     private val lines = mutableMapOf<Int, Line>()
     private var pc = -1
+    private var runNext = true
 
-    fun interpretCommand(command: CommandResult): Boolean {
+    fun interpretCommand(commandToInterpret: CommandResult): Result<Unit> {
+        var command : Command? = null
 
-        return when(command.command) {
-            is Ok -> interpretLine(Line(
-                    original = command.original,
-                    command = command.command.value
-            ))
+        val res = when(commandToInterpret.command) {
+            is Ok -> {
+                command = commandToInterpret.command.value
+                interpretLine(Line(
+                        original = commandToInterpret.original,
+                        command = commandToInterpret.command.value
+                ))
+            }
             is Err -> {
-                println(command.command.error)
-                true
+                runNext = true
+                Err(commandToInterpret.command.error)
             }
         }
+
+        if (res is Err && command !is Multiple) println(res.error)
+
+        return res
     }
 
-    private fun interpretLine(line: Line): Boolean {
+    private fun interpretLine(line: Line): Result<Unit> {
         return when(line.command) {
             is Print -> {
+                runNext = true
                 interpretPrint(line.command)
-                true
             }
             is Assignment -> {
+                runNext = true
                 interpretAssignment(line.command)
-                true
             }
             is StoreCommand -> {
+                runNext = true
                 lines[line.command.line] = Line(line.original, line.command.command)
-                true
+                Ok(Unit)
             }
             is Run -> {
+                runNext = true
                 runProgram(line.command)
-                true
             }
             is ListCommand -> {
+                runNext = true
                 listProgramInMemory()
-                true
             }
             is GoTo -> {
+                runNext = false
                 pc = line.command.line
-                false
+                Ok(Unit)
             }
-            is Command.GoSub -> {
-                lines[line.command.line]?.let { interpretLine(it) }
-                true
+            is GoSub -> {
+                runNext = true
+                lines[line.command.line]?.let { interpretLine(it) } ?: Err("No such line in memory")
             }
-            is Command.If -> {
+            is If -> {
+                runNext = true
                 interpretIf(line.command)
             }
-            Command.Return -> true
-            Command.Pop -> false
-            Command.ExpREM -> true
+            Return -> Err("Command 'RETURN' not implemented")
+            Pop -> Err("Command 'POP' not implemented")
+            ExpREM -> Ok(Unit)
             is Command.Multiple -> {
-                line.command.commands.forEach {
-                    interpretCommand(CommandResult(original = it.original, command = it.command))
-                    Unit
+                for((index, command) in line.command.commands.withIndex()) {
+                    val res = interpretCommand(CommandResult(original = command.original, command = command.command))
+                    if (res is Err) {
+                        val next = line.command.commands.getOrNull(index + 1)?.command
+                        if(next is Ok && next.value !is OnErr) {
+                            return res
+                        }
+                    }
                 }
-                true
+                return Ok(Unit)
             }
+            is Command.OnErr -> interpretLine(Line(original = line.original, command = line.command.command))
         }
     }
 
-    private fun listProgramInMemory() {
+    private fun listProgramInMemory(): Result<Unit> {
         val linesSorted = lines.keys.sorted()
         for (line in linesSorted) {
             lines[line]?.let {
                 println(it.original)
             }
         }
+        return Ok(Unit)
     }
 
-    private fun runProgram(command: Run) {
+    private fun runProgram(command: Run): Result<Unit> {
         val linesSorted = lines.keys.filter { it >= command.line  }.sorted()
 
         pc = linesSorted.first()
 
         while (true) {
-            val ordinary = lines[pc]?.let { interpretLine(it) } ?: break
+            lines[pc]?.let {
+                val res = interpretLine(it)
+                if (res is Err) return Err("*** Error on line $pc *** \n\t${res.error}")
+            } ?: return Err("No such line in memory: $pc")
 
-            if (ordinary) {
-                pc = linesSorted.getOrNull(linesSorted.indexOf(pc)  + 1) ?: break
+            if (runNext) {
+                val next = linesSorted.indexOf(pc)
+                pc = linesSorted.getOrNull(if (next == -1) -2 else next + 1) ?: return Ok(Unit)
             }
         }
     }
 
-    private fun interpretIf(command: If): Boolean {
+    private fun interpretIf(command: If): Result<Unit> {
         val result = interpretExpression(command.eval)
         return when (result) {
             is Ok -> when (result.value) {
-                is ResInt -> if (result.value.value > 0) interpretCommand(command.then) else true
-                else -> true
+                is ResInt -> {
+                    if (result.value.value > 0) interpretCommand(command.then) else Ok(Unit)
+                }
+                else -> Err("Cannot handle if statement that results other than integer")
             }
-            else -> true
+            is Err -> return Err(result.error)
         }
     }
 
-    private fun interpretAssignment(command: Assignment) {
+    private fun interpretAssignment(command: Assignment): Result<Unit> {
         val res = interpretExpression(command.expression)
         when(res) {
             is Ok -> variables[command.identifier.value] = res.value
-            is Err -> println(res.error)
+            is Err -> return Err(res.error)
         }
+        return Ok(Unit)
     }
 
-    private fun interpretPrint(command: Print) {
+    private fun interpretPrint(command: Print): Result<Unit> {
         when(command.expression) {
             is ExpStr -> println(command.expression.value)
             is ExpInt -> println(command.expression.value)
@@ -136,7 +162,20 @@ class Interpreter {
                             is ResStr -> println(expRes.value)
                         }
                     }
-                    is Err -> println(res.error)
+                    is Err -> return Err(res.error)
+                }
+            }
+            is ExpUnr -> {
+                val res = interpretUnaryExpression(command.expression)
+                when(res) {
+                    is Ok -> {
+                        val expRes = res.value
+                        when(expRes) {
+                            is ResInt -> println(expRes.value)
+                            is ResStr -> println(expRes.value)
+                        }
+                    }
+                    is Err -> return Err(res.error)
                 }
             }
             is ExpIdentifier -> {
@@ -146,8 +185,8 @@ class Interpreter {
                     is ResStr -> println(res.value)
                 }
             }
-            else -> println("*** Cannot interpret command: $command")
         }
+        return Ok(Unit)
     }
 
     private fun interpretIdentifier(identifier: ExpIdentifier): ExprResult = variables.getOrPut(identifier.value) {
@@ -158,11 +197,30 @@ class Interpreter {
         is ExpInt -> Ok(ResInt(expression.value))
         is ExpStr -> Ok(ResStr(expression.value))
         is ExpBin -> interpretBinaryExpression(expression)
-        is ExpUnr -> TODO()
+        is ExpUnr -> interpretUnaryExpression(expression)
         is ExpIdentifier -> Ok(interpretIdentifier(expression))
     }
 
-    private fun interpretBinaryExpression(expression: Expression.ExpBin): Result<ExprResult> {
+    private fun interpretUnaryExpression(expression: ExpUnr): Result<ExprResult> {
+        val resResult = interpretExpression(expression.expression)
+        val res = when(resResult) {
+            is Ok -> resResult.value
+            is Err -> return resResult
+        }
+        return when(expression.op) {
+            UnaryOp.UMinus -> when(res) {
+                is ExprResult.ResStr -> Err("*** Can not negate string '${res.value}'")
+                is ExprResult.ResInt -> Ok(ResInt(-res.value))
+            }
+            UnaryOp.Not -> when(res) {
+                is ExprResult.ResStr -> Err("*** Can not NOT string '${res.value}'")
+                is ExprResult.ResInt -> Ok(ResInt(if (res.value > 0) 0 else 1))
+            }
+        }
+
+    }
+
+    private fun interpretBinaryExpression(expression: ExpBin): Result<ExprResult> {
         val leftResResult = interpretExpression(expression.left)
         val rightResResult = interpretExpression(expression.right)
 
