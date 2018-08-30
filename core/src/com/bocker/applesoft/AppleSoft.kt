@@ -10,6 +10,9 @@ import com.badlogic.gdx.scenes.scene2d.Stage
 import com.badlogic.gdx.scenes.scene2d.ui.*
 import com.badlogic.gdx.scenes.scene2d.ui.List as UIList
 import com.badlogic.gdx.utils.viewport.StretchViewport
+import java.io.File
+import javax.swing.JFileChooser
+import javax.swing.filechooser.FileFilter
 
 sealed class Result<out V : Any> {
     data class Ok<out V : Any>(val value: V) : Result<V>()
@@ -24,6 +27,8 @@ class AppleSoft : ApplicationAdapter() {
     private lateinit var input: TextField
     private lateinit var list: UIList<String>
     private val interpreter = Interpreter()
+    private val inputStrings = mutableListOf<String>()
+    private var previousIndex = 0
 
 
     override fun create() {
@@ -35,9 +40,28 @@ class AppleSoft : ApplicationAdapter() {
                     when(it.keyCode) {
                         Input.Keys.ENTER ->  {
                             val txt = input.text
-                            interpreter.onPrint?.invoke(txt)
-                            interpreter.interpretCommand(parseToCommand(tokenizeLine(txt)))
-                            input.text = ""
+                            if (txt.isNotBlank()) {
+                                inputStrings.add(txt)
+                                previousIndex = inputStrings.size
+                                interpreter.onPrint?.invoke(txt)
+                                interpreter.interpretCommand(parseToCommand(tokenizeLine(txt)))
+                                input.text = ""
+                            }
+                        }
+                        Input.Keys.UP -> {
+                            inputStrings.getOrNull(previousIndex - 1)?.let { previous ->
+                                previousIndex--
+                                input.text = previous
+                            }
+                        }
+                        Input.Keys.DOWN -> {
+                            inputStrings.getOrNull(previousIndex + 1)?.let { next ->
+                                previousIndex++
+                                input.text = next
+                            } ?: {
+                                previousIndex = inputStrings.size
+                                input.text = ""
+                            }()
                         }
                     }
                 }
@@ -49,10 +73,32 @@ class AppleSoft : ApplicationAdapter() {
         list.selection.isDisabled = true
 
         interpreter.onPrint = { text ->
+            println(text)
             if(list.items.size > 22) list.items.removeIndex(0)
             list.items.add(text)
             list.invalidate()
             list.invalidateHierarchy()
+        }
+
+        interpreter.onLoad = {
+            val fc  = JFileChooser().apply {
+                fileSelectionMode = JFileChooser.FILES_ONLY
+                fileFilter = object : FileFilter() {
+                    override fun getDescription(): String = "BASIC source file"
+
+                    override fun accept(pathname: File?): Boolean {
+                        return pathname?.extension?.toLowerCase() == "bas"
+                    }
+
+                }
+            }
+            when(fc.showOpenDialog(null)) {
+                JFileChooser.APPROVE_OPTION -> {
+                    fc.selectedFile.forEachLine {
+                        interpreter.interpretCommand(parseToCommand(tokenizeLine(it)))
+                    }
+                }
+            }
         }
 
         table = Table(skin).apply {

@@ -80,7 +80,7 @@ fun BinaryOp.priorityBinop(): Int {
 }
 
 sealed class Expression {
-    data class ExpInt(val value: Int) : Expression()
+    data class ExpInt(val value: Float) : Expression()
     data class ExpStr(val value: String) : Expression()
     data class ExpIdentifier(val value: String) : Expression()
     data class ExpUnr(val op: UnaryOp, val expression: Expression) : Expression()
@@ -101,6 +101,7 @@ sealed class Command {
     object Pop: Command()
     object ExpREM: Command()
     object ListCommand: Command()
+    object Load: Command()
 }
 
 data class CommandResult(val original: String, val command: Result<Command>)
@@ -130,24 +131,31 @@ fun parseToCommand(tokenRes: TokenResult): CommandResult {
             val head = tokens.first()
             when(head) {
                 is Keyword -> when(head.value) {
+                    "LOAD" -> Ok(Load)
                     "PRINT", "?" -> parseToPrintCommand(tokens.drop(1))
                     "REM" -> Ok(ExpREM)
                     "LET" -> parseToAssignment(tokens.drop(1))
                     "RUN" -> {
                         val line = tokens.getOrNull(1)?.let {
-                            (it as? NumberLiteral)?.value ?: 0
-                        } ?: 0
-                        Ok(Run(line))
+                            (it as? NumberLiteral)?.value ?: 0f
+                        } ?: 0f
+                        Ok(Run(line.toInt()))
                     }
                     "LIST" ->  Ok(ListCommand)
                     "GOTO" -> {
                         val line = tokens.getOrNull(1)?.let {
-                            (it as? NumberLiteral)?.value ?: 0
-                        } ?: 0
-                        Ok(GoTo(line))
+                            (it as? NumberLiteral)?.value ?: 0f
+                        } ?: 0f
+                        Ok(GoTo(line.toInt()))
                     }
                     "IF" -> {
                         val thenIndex = tokens.indexOfFirst { it is Keyword && (it.value == "THEN" || it.value == "TH") }
+                        if (thenIndex < 0) {
+                            return CommandResult(
+                                    original = tokenRes.original,
+                                    command = Err("*** No THEN in IF THEN expression ***\n" + "\t original: ${tokenRes.original}")
+                            )
+                        }
                         val ifExpRes = parseShuntingYard(tokens.subList(1, thenIndex))
                         val thenExpRes = parseToCommand(TokenResult(original = tokenRes.original, tokens = tokens.drop(thenIndex + 1)))
                         if (ifExpRes !is Ok || thenExpRes.command !is Ok)
@@ -172,7 +180,7 @@ fun parseToCommand(tokenRes: TokenResult): CommandResult {
                 is NumberLiteral -> {
                     val command = parseToCommand(TokenResult(original = tokenRes.original, tokens = tokens.drop(1)))
                     when(command.command) {
-                        is Ok -> Ok(StoreCommand(head.value, command = command.command.value))
+                        is Ok -> Ok(StoreCommand(head.value.toInt(), command = command.command.value))
                         else -> command.command
                     }
                 }

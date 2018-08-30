@@ -4,12 +4,13 @@ import com.bocker.applesoft.ExprResult.*
 import com.bocker.applesoft.Result.Err
 import com.bocker.applesoft.Result.Ok
 import com.bocker.applesoft.BinaryOp.*
+import com.bocker.applesoft.UnaryOp.*
 import com.bocker.applesoft.Expression.*
 import com.bocker.applesoft.Command.*
 
 sealed class ExprResult{
     data class ResStr(val value: String): ExprResult()
-    data class ResInt(val value: Int): ExprResult()
+    data class ResFloat(val value: Float): ExprResult()
 }
 
 data class Line(val original: String, val command: Command)
@@ -21,6 +22,7 @@ class Interpreter {
     private var pc = -1
     private var runNext = true
     var onPrint: ((String) -> Unit)? = null
+    var onLoad: (() -> Unit)? = null
 
     fun interpretCommand(commandToInterpret: CommandResult): Result<Unit> {
         var command : Command? = null
@@ -96,6 +98,7 @@ class Interpreter {
                 return Ok(Unit)
             }
             is Command.OnErr -> interpretLine(Line(original = line.original, command = line.command.command))
+            Command.Load -> Ok(onLoad?.invoke() ?: Unit)
         }
     }
 
@@ -112,7 +115,7 @@ class Interpreter {
     private fun runProgram(command: Run): Result<Unit> {
         val linesSorted = lines.keys.filter { it >= command.line  }.sorted()
 
-        pc = linesSorted.first()
+        pc = linesSorted.firstOrNull() ?: 0
 
         while (true) {
             lines[pc]?.let {
@@ -131,7 +134,7 @@ class Interpreter {
         val result = interpretExpression(command.eval)
         return when (result) {
             is Ok -> when (result.value) {
-                is ResInt -> {
+                is ResFloat -> {
                     if (result.value.value > 0) interpretCommand(command.then) else Ok(Unit)
                 }
                 else -> Err("Cannot handle if statement that results other than integer")
@@ -159,7 +162,7 @@ class Interpreter {
                     is Ok -> {
                         val expRes = res.value
                         when(expRes) {
-                            is ResInt -> onPrint?.invoke(expRes.value.toString())
+                            is ResFloat -> onPrint?.invoke(expRes.value.toString())
                             is ResStr -> onPrint?.invoke(expRes.value)
                         }
                     }
@@ -172,7 +175,7 @@ class Interpreter {
                     is Ok -> {
                         val expRes = res.value
                         when(expRes) {
-                            is ResInt -> onPrint?.invoke(expRes.value.toString())
+                            is ResFloat -> onPrint?.invoke(expRes.value.toString())
                             is ResStr -> onPrint?.invoke(expRes.value)
                         }
                     }
@@ -182,7 +185,7 @@ class Interpreter {
             is ExpIdentifier -> {
                 val res = interpretIdentifier(command.expression)
                 when(res) {
-                    is ResInt -> onPrint?.invoke(res.value.toString())
+                    is ResFloat -> onPrint?.invoke(res.value.toString())
                     is ResStr -> onPrint?.invoke(res.value)
                 }
             }
@@ -191,11 +194,11 @@ class Interpreter {
     }
 
     private fun interpretIdentifier(identifier: ExpIdentifier): ExprResult = variables.getOrPut(identifier.value) {
-        ResInt(0)
+        ResFloat(0f)
     }
 
     private fun interpretExpression(expression: Expression): Result<ExprResult> = when(expression){
-        is ExpInt -> Ok(ResInt(expression.value))
+        is ExpInt -> Ok(ResFloat(expression.value))
         is ExpStr -> Ok(ResStr(expression.value))
         is ExpBin -> interpretBinaryExpression(expression)
         is ExpUnr -> interpretUnaryExpression(expression)
@@ -209,13 +212,13 @@ class Interpreter {
             is Err -> return resResult
         }
         return when(expression.op) {
-            UnaryOp.UMinus -> when(res) {
-                is ExprResult.ResStr -> Err("*** Can not negate string '${res.value}'")
-                is ExprResult.ResInt -> Ok(ResInt(-res.value))
+            UMinus -> when(res) {
+                is ResStr -> Err("*** Can not negate string '${res.value}'")
+                is ResFloat -> Ok(ResFloat(-res.value))
             }
-            UnaryOp.Not -> when(res) {
-                is ExprResult.ResStr -> Err("*** Can not NOT string '${res.value}'")
-                is ExprResult.ResInt -> Ok(ResInt(if (res.value > 0) 0 else 1))
+            Not -> when(res) {
+                is ResStr -> Err("*** Can not NOT string '${res.value}'")
+                is ResFloat -> Ok(ResFloat(if (res.value > 0) 0f else 1f))
             }
         }
 
@@ -235,80 +238,80 @@ class Interpreter {
         }
 
         return when(expression.op) {
-            Plus -> if (leftRes is ResInt && rightRes is ResInt ) {
-                Ok(ResInt(leftRes.value + rightRes.value))
+            Plus -> if (leftRes is ResFloat && rightRes is ResFloat ) {
+                Ok(ResFloat(leftRes.value + rightRes.value))
             } else if (leftRes is ResStr && rightRes is ResStr ) {
                 Ok(ResStr(leftRes.value + rightRes.value))
             } else Err<ExprResult>("Cannot add $leftRes to $rightRes")
 
-            Minus ->  if (leftRes is ResInt && rightRes is ResInt ) {
-                Ok(ResInt(leftRes.value - rightRes.value))
+            Minus ->  if (leftRes is ResFloat && rightRes is ResFloat ) {
+                Ok(ResFloat(leftRes.value - rightRes.value))
             } else Err("Cannot subtract $leftRes to $rightRes")
 
-            Mult -> if (leftRes is ResInt && rightRes is ResInt ) {
-                Ok(ResInt(leftRes.value * rightRes.value))
+            Mult -> if (leftRes is ResFloat && rightRes is ResFloat ) {
+                Ok(ResFloat(leftRes.value * rightRes.value))
             } else Err("Cannot multiply $leftRes to $rightRes")
 
-            Div -> if (leftRes is ResInt && rightRes is ResInt ) {
-                Ok(ResInt(leftRes.value / rightRes.value))
+            Div -> if (leftRes is ResFloat && rightRes is ResFloat ) {
+                Ok(ResFloat(leftRes.value / rightRes.value))
             } else Err("Cannot divide $leftRes to $rightRes")
 
-            Mod -> if (leftRes is ResInt && rightRes is ResInt ) {
-                Ok(ResInt(leftRes.value % rightRes.value))
+            Mod -> if (leftRes is ResFloat && rightRes is ResFloat ) {
+                Ok(ResFloat(leftRes.value % rightRes.value))
             } else Err("Cannot modulus $leftRes to $rightRes")
 
-            Equal -> if (leftRes is ResInt && rightRes is ResInt ) {
-                Ok(ResInt(
-                        if (leftRes.value == rightRes.value) 1 else 0
+            Equal -> if (leftRes is ResFloat && rightRes is ResFloat ) {
+                Ok(ResFloat(
+                        if (leftRes.value == rightRes.value) 1f else 0f
                 ))
             } else if (leftRes is ResStr && rightRes is ResStr ) {
-                Ok(ResInt(
-                        if (leftRes.value == rightRes.value) 1 else 0
+                Ok(ResFloat(
+                        if (leftRes.value == rightRes.value) 1f else 0f
                 ))
             } else Err<ExprResult>("Cannot compare $leftRes = $rightRes")
 
-            Less -> if (leftRes is ResInt && rightRes is ResInt ) {
-                Ok(ResInt(
-                        if(leftRes.value - rightRes.value < 0) 1 else 0
+            Less -> if (leftRes is ResFloat && rightRes is ResFloat ) {
+                Ok(ResFloat(
+                        if(leftRes.value - rightRes.value < 0) 1f else 0f
                 ))
             } else Err("Cannot compare $leftRes < $rightRes")
 
-            LessEq -> if (leftRes is ResInt && rightRes is ResInt ) {
-                Ok(ResInt(
-                        if(leftRes.value - rightRes.value <= 0) 1 else 0
+            LessEq -> if (leftRes is ResFloat && rightRes is ResFloat ) {
+                Ok(ResFloat(
+                        if(leftRes.value - rightRes.value <= 0) 1f else 0f
                 ))
             } else Err("Cannot compare $leftRes <= $rightRes")
 
-            Great ->  if (leftRes is ResInt && rightRes is ResInt ) {
-                Ok(ResInt(
-                        if(leftRes.value - rightRes.value > 0) 1 else 0
+            Great ->  if (leftRes is ResFloat && rightRes is ResFloat ) {
+                Ok(ResFloat(
+                        if(leftRes.value - rightRes.value > 0) 1f else 0f
                 ))
             } else Err("Cannot compare $leftRes > $rightRes")
 
-            GreatEq -> if (leftRes is ResInt && rightRes is ResInt ) {
-                Ok(ResInt(
-                        if (leftRes.value - rightRes.value >= 0) 1 else 0
+            GreatEq -> if (leftRes is ResFloat && rightRes is ResFloat ) {
+                Ok(ResFloat(
+                        if (leftRes.value - rightRes.value >= 0) 1f else 0f
                 ))
             } else Err("Cannot compare $leftRes >= $rightRes")
 
-            Diff -> if (leftRes is ResInt && rightRes is ResInt ) {
-                Ok(ResInt(
-                        if (leftRes.value != rightRes.value) 1 else 0
+            Diff -> if (leftRes is ResFloat && rightRes is ResFloat ) {
+                Ok(ResFloat(
+                        if (leftRes.value != rightRes.value) 1f else 0f
                 ))
             }  else if (leftRes is ResStr && rightRes is ResStr ) {
-                Ok(ResInt(
-                        if (leftRes.value != rightRes.value) 1 else 0
+                Ok(ResFloat(
+                        if (leftRes.value != rightRes.value) 1f else 0f
                 ))
             } else Err<ExprResult>("Cannot compare $leftRes <> $rightRes")
 
-            And -> if (leftRes is ResInt && rightRes is ResInt ) {
-                Ok(ResInt(
-                        if (leftRes.value > 0 && rightRes.value > 0) 1 else 0
+            And -> if (leftRes is ResFloat && rightRes is ResFloat ) {
+                Ok(ResFloat(
+                        if (leftRes.value > 0 && rightRes.value > 0) 1f else 0f
                 ))
             } else Err("Cannot compare $leftRes & $rightRes")
-            Or -> if (leftRes is ResInt && rightRes is ResInt ) {
-                Ok(ResInt(
-                        if (leftRes.value > 0 || rightRes.value > 0) 1 else 0
+            Or -> if (leftRes is ResFloat && rightRes is ResFloat ) {
+                Ok(ResFloat(
+                        if (leftRes.value > 0 || rightRes.value > 0) 1f else 0f
                 ))
             } else Err("Cannot compare $leftRes & $rightRes")
         }

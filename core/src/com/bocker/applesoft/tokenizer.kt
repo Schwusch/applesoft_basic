@@ -4,7 +4,7 @@ import com.bocker.applesoft.Token.*
 sealed class Token {
     data class Identifier(val value: String) : Token()
     data class StringLiteral(val value: String) : Token()
-    data class NumberLiteral(val value: Int) : Token()
+    data class NumberLiteral(val value: Float) : Token()
     data class Keyword(val value: String) : Token()
     data class Operator(val value: String, val unary: Boolean = false) : Token()
     data class Illegal(val value: String) : Token()
@@ -26,7 +26,8 @@ val keywords = setOf(
         "GOSUB",
         "RETURN",
         "POP",
-        "ONERR"
+        "ONERR",
+        "LOAD"
 )
 
 val operators = setOf(
@@ -100,15 +101,19 @@ class Tokenizer(private val input: String, var index: Int = 0) {
         }
     }
 
-    private fun readNumber(): Token.NumberLiteral {
+    private fun readNumber(): Token {
         var number = "${input[index]}"
         index++
-        while (index < input.length && input[index].isDigit()) {
+        while (index < input.length && (input[index].isDigit() || input[index] == '.')) {
             number += input[index]
             index++
         }
 
-        return NumberLiteral(number.toInt())
+        val dots = number.count { it == '.' }
+
+        if (dots < 2) return NumberLiteral(number.toFloat())
+
+        return Illegal(value = number)
     }
 
     private fun readOperator(): Token.Operator {
