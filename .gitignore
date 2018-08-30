@@ -108,3 +108,5 @@ hs_err_pid*
 
 AppleSoft
 /target
+.gradle
+**/build
